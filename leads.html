@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Leads · FourLab Comercial</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <header class="topbar" id="topbar"></header>
+  <div class="container">
+    <div class="toolbar">
+      <input id="q" placeholder="Buscar por nome, loja, CNPJ ou e-mail" style="max-width:340px" />
+      <select id="fstatus" style="max-width:180px"><option value="">Todos os status</option></select>
+      <select id="fowner" style="max-width:200px"><option value="">Todos responsáveis</option></select>
+      <label style="display:flex;gap:6px;align-items:center;margin:0;font-weight:500;font-size:13px">
+        <input type="checkbox" id="fmine" style="width:auto" /> Só meus
+      </label>
+      <span class="spacer"></span>
+      <span class="muted" id="count"></span>
+    </div>
+    <div class="card" style="padding:0;overflow:auto">
+      <table>
+        <thead>
+          <tr><th>Criado</th><th>Nome</th><th>Loja</th><th>CNPJ</th><th>Status</th><th>Responsável</th></tr>
+        </thead>
+        <tbody id="rows"><tr><td colspan="6" class="center muted">Carregando…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script src="config.js"></script>
+  <script type="module">
+    import { supabase, guard, $, $$, el, fmtDate, fmtCnpj, pillClass, STATUSES } from "./assets/app.js";
+
+    const profile = await guard();
+    if (!profile) throw new Error("no session");
+
+    // popular selects
+    STATUSES.forEach((s) => $("#fstatus").append(el("option", { value: s, textContent: s })));
+    const { data: team } = await supabase
+      .from("commercial_users").select("id, nome").order("nome");
+    const teamById = Object.fromEntries((team || []).map((u) => [u.id, u.nome]));
+    (team || []).forEach((u) => $("#fowner").append(el("option", { value: u.id, textContent: u.nome })));
+
+    let all = [];
+    async function load() {
+      const { data, error } = await supabase
+        .from("leads")
+        .select("id, created_at, nome_completo, nome_loja, razao_social, cnpj, status, responsavel_id")
+        .order("created_at", { ascending: false });
+      if (error) { $("#rows").innerHTML = `<tr><td colspan="6" class="center">Erro ao carregar.</td></tr>`; return; }
+      all = data || [];
+      render();
+    }
+
+    function render() {
+      const q = $("#q").value.trim().toLowerCase();
+      const fs = $("#fstatus").value, fo = $("#fowner").value, mine = $("#fmine").checked;
+      const list = all.filter((l) => {
+        if (fs && l.status !== fs) return false;
+        if (fo && l.responsavel_id !== fo) return false;
+        if (mine && l.responsavel_id !== profile.id) return false;
+        if (q) {
+          const hay = `${l.nome_completo} ${l.nome_loja || ""} ${l.razao_social || ""} ${l.cnpj}`.toLowerCase();
+          if (!hay.includes(q)) return false;
+        }
+        return true;
+      });
+      $("#count").textContent = `${list.length} de ${all.length}`;
+      const tb = $("#rows");
+      tb.innerHTML = "";
+      if (!list.length) { tb.innerHTML = `<tr><td colspan="6" class="center muted">Nenhum lead.</td></tr>`; return; }
+      list.forEach((l) => {
+        const tr = el("tr", {},
+          el("td", { textContent: fmtDate(l.created_at) }),
+          el("td", { textContent: l.nome_completo }),
+          el("td", { textContent: l.nome_loja || l.razao_social || "—" }),
+          el("td", { textContent: fmtCnpj(l.cnpj) }),
+          el("td", {}, el("span", { className: pillClass(l.status), textContent: l.status })),
+          el("td", { textContent: teamById[l.responsavel_id] || "—" }),
+        );
+        tr.onclick = () => (location.href = `lead.html?id=${l.id}`);
+        tb.append(tr);
+      });
+    }
+
+    ["input", "change"].forEach((ev) => {
+      $("#q").addEventListener(ev, render);
+      $("#fstatus").addEventListener(ev, render);
+      $("#fowner").addEventListener(ev, render);
+      $("#fmine").addEventListener(ev, render);
+    });
+    await load();
+  </script>
+</body>
+</html>

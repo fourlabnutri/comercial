@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Entrar · FourLab Comercial</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <div class="container narrow" style="padding-top:64px">
+    <h1>Painel Comercial</h1>
+    <p class="muted">Acesso restrito ao time FourLab.</p>
+    <div class="card mt">
+      <form id="form">
+        <label for="email">E-mail</label>
+        <input id="email" type="email" required autocomplete="username" />
+        <label for="senha">Senha</label>
+        <input id="senha" type="password" required autocomplete="current-password" />
+        <button id="submit" type="submit" class="mt">Entrar</button>
+        <div id="msg"></div>
+      </form>
+    </div>
+  </div>
+
+  <script src="config.js"></script>
+  <script type="module">
+    import { supabase, $, getProfile } from "./assets/app.js";
+
+    // Já logado? manda pro painel.
+    getProfile().then((p) => { if (p && p.ativo) location.href = "leads.html"; });
+
+    const form = $("#form"), btn = $("#submit"), msg = $("#msg");
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      btn.disabled = true; btn.textContent = "Entrando…";
+      msg.className = ""; msg.textContent = "";
+      const { error } = await supabase.auth.signInWithPassword({
+        email: $("#email").value.trim(),
+        password: $("#senha").value,
+      });
+      if (error) {
+        msg.className = "alert alert-error";
+        msg.textContent = "E-mail ou senha inválidos.";
+        btn.disabled = false; btn.textContent = "Entrar";
+        return;
+      }
+      const profile = await getProfile();
+      if (!profile || !profile.ativo) {
+        await supabase.auth.signOut();
+        msg.className = "alert alert-error";
+        msg.textContent = "Usuário sem acesso ao painel. Fale com a chefia.";
+        btn.disabled = false; btn.textContent = "Entrar";
+        return;
+      }
+      location.href = "leads.html";
+    });
+  </script>
+</body>
+</html>

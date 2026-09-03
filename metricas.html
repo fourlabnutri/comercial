@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Métricas · FourLab Comercial</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <header class="topbar" id="topbar"></header>
+  <div class="container">
+    <h1>Métricas</h1>
+    <p class="muted">Funil de leads e uso do painel pelo time. Acesso restrito à chefia.</p>
+
+    <h3 class="mt">Funil</h3>
+    <div class="kpi" id="funnel"></div>
+
+    <h3 class="mt">Uso do painel (últimos 30 dias)</h3>
+    <div class="card" style="padding:0;overflow:auto">
+      <table>
+        <thead><tr><th>Usuário</th><th>Acessos</th><th>Ações em leads</th><th>Último acesso</th></tr></thead>
+        <tbody id="usage"><tr><td colspan="4" class="center muted">Carregando…</td></tr></tbody>
+      </table>
+    </div>
+
+    <h3 class="mt">Atividade recente</h3>
+    <div class="card" style="padding:0;overflow:auto">
+      <table>
+        <thead><tr><th>Quando</th><th>Usuário</th><th>Evento</th><th>Detalhe</th></tr></thead>
+        <tbody id="recent"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script src="config.js"></script>
+  <script type="module">
+    import { supabase, guard, $, el, fmtDate, STATUSES } from "./assets/app.js";
+
+    const profile = await guard({ requireChefia: true });
+    if (!profile) throw new Error("no access");
+
+    // Funil
+    const { data: leads } = await supabase.from("leads").select("status");
+    const byStatus = Object.fromEntries(STATUSES.map((s) => [s, 0]));
+    (leads || []).forEach((l) => { byStatus[l.status] = (byStatus[l.status] || 0) + 1; });
+    $("#funnel").innerHTML = "";
+    STATUSES.forEach((s) => $("#funnel").append(
+      el("div", { className: "card" },
+        el("div", { className: "n", textContent: byStatus[s] || 0 }),
+        el("div", { className: "muted", textContent: s }))
+    ));
+
+    // Uso: activity_logs 30d
+    const since = new Date(Date.now() - 30 * 864e5).toISOString();
+    const { data: logs } = await supabase
+      .from("activity_logs")
+      .select("user_id, event_type, event_detail, created_at")
+      .gte("created_at", since)
+      .order("created_at", { ascending: false });
+
+    const { data: team } = await supabase.from("commercial_users").select("id, nome");
+    const nameById = Object.fromEntries((team || []).map((u) => [u.id, u.nome]));
+
+    const agg = {};
+    (logs || []).forEach((l) => {
+      const k = l.user_id || "—";
+      agg[k] ??= { acessos: 0, acoes: 0, ultimo: null };
+      if (l.event_type === "page_view") agg[k].acessos++;
+      if (l.event_type === "lead_updated") agg[k].acoes++;
+      if (!agg[k].ultimo || l.created_at > agg[k].ultimo) agg[k].ultimo = l.created_at;
+    });
+    const ub = $("#usage"); ub.innerHTML = "";
+    const entries = Object.entries(agg).sort((a, b) => (b[1].ultimo || "").localeCompare(a[1].ultimo || ""));
+    if (!entries.length) ub.innerHTML = `<tr><td colspan="4" class="center muted">Sem registros.</td></tr>`;
+    entries.forEach(([uid, v]) => ub.append(el("tr", {},
+      el("td", { textContent: nameById[uid] || uid }),
+      el("td", { textContent: v.acessos }),
+      el("td", { textContent: v.acoes }),
+      el("td", { textContent: fmtDate(v.ultimo) }),
+    )));
+
+    // Atividade recente (100)
+    const rb = $("#recent");
+    (logs || []).slice(0, 100).forEach((l) => rb.append(el("tr", {},
+      el("td", { textContent: fmtDate(l.created_at) }),
+      el("td", { textContent: nameById[l.user_id] || "—" }),
+      el("td", { textContent: l.event_type }),
+      el("td", { textContent: JSON.stringify(l.event_detail) }),
+    )));
+  </script>
+</body>
+</html>

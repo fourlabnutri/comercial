@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lead · FourLab Comercial</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <header class="topbar" id="topbar"></header>
+  <div class="container narrow">
+    <p><a href="leads.html">&larr; Voltar para leads</a></p>
+    <div id="app"><p class="muted">Carregando…</p></div>
+  </div>
+
+  <script src="config.js"></script>
+  <script type="module">
+    import { supabase, guard, $, el, fmtDate, fmtCnpj, pillClass, logActivity, STATUSES } from "./assets/app.js";
+
+    const profile = await guard();
+    if (!profile) throw new Error("no session");
+    const id = new URLSearchParams(location.search).get("id");
+    const app = $("#app");
+
+    const { data: team } = await supabase.from("commercial_users").select("id, nome").eq("ativo", true).order("nome");
+
+    async function loadLead() {
+      const { data: lead, error } = await supabase.from("leads").select("*").eq("id", id).maybeSingle();
+      if (error || !lead) { app.innerHTML = "<p>Lead não encontrado.</p>"; return; }
+      const { data: hist } = await supabase
+        .from("lead_status_history")
+        .select("status_anterior, status_novo, created_at, changed_by")
+        .eq("lead_id", id).order("created_at", { ascending: false });
+      const teamById = Object.fromEntries((team || []).map((u) => [u.id, u.nome]));
+
+      app.innerHTML = "";
+      // Cabeçalho
+      app.append(el("div", { className: "card" },
+        el("h1", { textContent: lead.nome_loja || lead.razao_social || lead.nome_completo }),
+        el("p", { className: "muted", innerHTML:
+          `${lead.razao_social ? lead.razao_social + " · " : ""}${fmtCnpj(lead.cnpj)}` +
+          `${lead.situacao_cnpj ? " · " + lead.situacao_cnpj : ""}` }),
+        el("p", {}, el("span", { className: pillClass(lead.status), textContent: lead.status })),
+        el("dl", { innerHTML: `
+          <div class="row" style="margin-top:8px">
+            <div><strong>Contato</strong><br>${lead.nome_completo}</div>
+            <div><strong>E-mail</strong><br><a href="mailto:${lead.email}">${lead.email}</a></div>
+          </div>
+          <div class="row" style="margin-top:8px">
+            <div><strong>WhatsApp</strong><br><a href="https://wa.me/55${lead.whatsapp.replace(/\D/g,'')}" target="_blank" rel="noopener">${lead.whatsapp}</a></div>
+            <div><strong>Instagram</strong><br>${lead.instagram_loja || "—"}</div>
+          </div>
+          <p class="hint">Recebido em ${fmtDate(lead.created_at)}</p>` }),
+      ));
+
+      // Gestão
+      const statusSel = el("select", {}, ...STATUSES.map((s) =>
+        el("option", { value: s, textContent: s, selected: s === lead.status })));
+      const ownerSel = el("select", {}, el("option", { value: "", textContent: "— sem responsável —" }),
+        ...(team || []).map((u) => el("option", { value: u.id, textContent: u.nome, selected: u.id === lead.responsavel_id })));
+      const obs = el("textarea", { value: lead.observacoes || "" });
+      const saveBtn = el("button", { textContent: "Salvar alterações" });
+      const savedMsg = el("div");
+
+      saveBtn.onclick = async () => {
+        saveBtn.disabled = true; savedMsg.className = ""; savedMsg.textContent = "";
+        const patch = {
+          status: statusSel.value,
+          responsavel_id: ownerSel.value || null,
+          observacoes: obs.value.trim() || null,
+        };
+        const { error } = await supabase.from("leads").update(patch).eq("id", id);
+        if (error) {
+          savedMsg.className = "alert alert-error"; savedMsg.textContent = "Erro ao salvar.";
+        } else {
+          savedMsg.className = "alert alert-ok"; savedMsg.textContent = "Salvo.";
+          logActivity("lead_updated", { lead_id: id, ...patch });
+          loadLead();
+        }
+        saveBtn.disabled = false;
+      };
+
+      const card = el("div", { className: "card" }, el("h3", { textContent: "Gestão do lead" }));
+      card.append(el("label", { textContent: "Status" }), statusSel);
+      card.append(el("label", { textContent: "Responsável" }), ownerSel);
+      card.append(el("label", { textContent: "Observações" }), obs);
+      card.append(el("div", { className: "mt" }, saveBtn), savedMsg);
+      app.append(card);
+
+      // Histórico
+      const hcard = el("div", { className: "card" }, el("h3", { textContent: "Histórico de status" }));
+      const ul = el("table", {}, el("thead", { innerHTML: "<tr><th>Quando</th><th>De</th><th>Para</th><th>Por</th></tr>" }));
+      const hbody = el("tbody");
+      (hist || []).forEach((h) => hbody.append(el("tr", {},
+        el("td", { textContent: fmtDate(h.created_at) }),
+        el("td", { textContent: h.status_anterior || "—" }),
+        el("td", { textContent: h.status_novo }),
+        el("td", { textContent: teamById[h.changed_by] || "—" }),
+      )));
+      ul.append(hbody); hcard.append(ul); app.append(hcard);
+    }
+
+    await loadLead();
+  </script>
+</body>
+</html>

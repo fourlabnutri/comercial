@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Seja um lojista FourLab</title>
+  <meta name="description" content="Cadastre sua loja e leve a FourLab Nutrition para os seus clientes de endurance." />
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <div class="container narrow" style="padding-top:48px">
+    <h1>Revenda FourLab Nutrition</h1>
+    <p class="muted">Suplementos para endurance com racional esportivo, giro e margem para o seu ponto de venda. Preencha os dados e nosso time comercial entra em contato.</p>
+
+    <div class="card mt">
+      <form id="form">
+        <label for="nome_completo">Nome completo *</label>
+        <input id="nome_completo" name="nome_completo" required autocomplete="name" />
+
+        <label for="email">E-mail *</label>
+        <input id="email" name="email" type="email" required autocomplete="email" />
+
+        <label for="whatsapp">WhatsApp *</label>
+        <input id="whatsapp" name="whatsapp" inputmode="tel" placeholder="(00) 00000-0000" required />
+
+        <label for="cnpj">CNPJ *</label>
+        <input id="cnpj" name="cnpj" inputmode="numeric" placeholder="00.000.000/0000-00" required />
+        <div class="hint" id="cnpj_hint">Validamos a situação na Receita Federal.</div>
+
+        <label for="nome_loja">Nome da loja</label>
+        <input id="nome_loja" name="nome_loja" autocomplete="organization" />
+
+        <label for="instagram_loja">Instagram da loja</label>
+        <input id="instagram_loja" name="instagram_loja" placeholder="@sualoja" />
+
+        <button id="submit" type="submit" class="mt">Quero revender</button>
+        <div id="msg"></div>
+      </form>
+    </div>
+    <p class="center mt"><small class="muted">Já é do time? <a href="login.html">Acessar painel</a></small></p>
+  </div>
+
+  <script src="config.js"></script>
+  <script type="module">
+    import { $, fmtCnpj, onlyDigits } from "./assets/app.js";
+    const cfg = window.FOURLAB_CONFIG;
+    const form = $("#form"), btn = $("#submit"), msg = $("#msg");
+    const cnpj = $("#cnpj"), wpp = $("#whatsapp"), hint = $("#cnpj_hint");
+
+    cnpj.addEventListener("input", () => { cnpj.value = fmtCnpj(cnpj.value); });
+    wpp.addEventListener("input", () => {
+      const d = onlyDigits(wpp.value).slice(0, 11);
+      wpp.value = d.replace(/^(\d{2})(\d)/, "($1) $2").replace(/(\d{5})(\d)/, "$1-$2");
+    });
+
+    const show = (cls, text) => { msg.className = "alert " + cls; msg.textContent = text; };
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      msg.className = ""; msg.textContent = "";
+      btn.disabled = true; btn.textContent = "Enviando…";
+      const payload = {
+        nome_completo: $("#nome_completo").value.trim(),
+        email: $("#email").value.trim(),
+        whatsapp: wpp.value.trim(),
+        cnpj: onlyDigits(cnpj.value),
+        nome_loja: $("#nome_loja").value.trim(),
+        instagram_loja: $("#instagram_loja").value.trim(),
+      };
+      try {
+        const r = await fetch(cfg.SUBMIT_LEAD_FN, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", apikey: cfg.SUPABASE_ANON_KEY },
+          body: JSON.stringify(payload),
+        });
+        const data = await r.json().catch(() => ({}));
+        if (r.ok) {
+          form.reset();
+          show("alert-ok", data.razao_social
+            ? `Recebido! Empresa identificada: ${data.razao_social}. Nosso time comercial vai falar com você.`
+            : "Cadastro recebido! Nosso time comercial vai falar com você em breve.");
+        } else {
+          show("alert-error", data.message || "Não foi possível concluir o cadastro. Confira os dados e tente novamente.");
+        }
+      } catch (err) {
+        show("alert-error", "Falha de conexão. Tente novamente em instantes.");
+      } finally {
+        btn.disabled = false; btn.textContent = "Quero revender";
+      }
+    });
+  </script>
+</body>
+</html>
